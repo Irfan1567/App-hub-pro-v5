@@ -82,15 +82,17 @@ class MultiAppSessionManager(
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 databaseEnabled = true
-                allowFileAccess = false // Secure: files served via virtual origin
+                allowFileAccess = true
                 allowContentAccess = true
+                javaScriptCanOpenWindowsAutomatically = true
+                setGeolocationEnabled(true)
                 mediaPlaybackRequiresUserGesture = false
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 displayZoomControls = false
                 builtInZoomControls = true
                 setSupportZoom(true)
-                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 cacheMode = WebSettings.LOAD_DEFAULT
             }
         }

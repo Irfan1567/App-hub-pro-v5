@@ -18,11 +18,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,12 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ActiveAppSession
+import com.example.data.model.AppEntity
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.ElectricViolet
 import com.example.ui.theme.EmeraldGlow
@@ -55,6 +55,7 @@ import com.example.ui.theme.RoseError
 @Composable
 fun MultiAppSwitcherSheet(
     activeSessions: List<ActiveAppSession>,
+    allApps: List<AppEntity> = emptyList(),
     currentActiveAppId: String?,
     sheetState: SheetState,
     onDismiss: () -> Unit,
@@ -96,7 +97,7 @@ fun MultiAppSwitcherSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Running App Switcher",
+                        text = "App Switcher",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -119,29 +120,21 @@ fun MultiAppSwitcherSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (activeSessions.isEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("No running app sessions", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Launch an app from the dashboard to run it.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (activeSessions.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "RUNNING SESSIONS (${activeSessions.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberCyan
+                        )
                     }
-                }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(activeSessions, key = { it.appId }) { session ->
+
+                    items(activeSessions, key = { "session_${it.appId}" }) { session ->
                         val isSelected = session.appId == currentActiveAppId
                         SwitcherCardItem(
                             session = session,
@@ -152,6 +145,97 @@ fun MultiAppSwitcherSheet(
                             },
                             onClose = { onCloseSession(session.appId) }
                         )
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                // Other Installed Apps
+                val otherApps = allApps.filter { app -> activeSessions.none { it.appId == app.id } }
+                if (otherApps.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "ALL INSTALLED APPS (${allApps.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    items(otherApps, key = { "app_${it.id}" }) { app ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSwitchApp(app.id)
+                                    onDismiss()
+                                }
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    RoundedCornerShape(14.dp)
+                                ),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(EmeraldGlow.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = app.name.take(1).uppercase(),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            color = EmeraldGlow
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column {
+                                        Text(
+                                            text = app.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = app.description.ifEmpty { "Tap to launch" },
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Launch",
+                                    tint = EmeraldGlow,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

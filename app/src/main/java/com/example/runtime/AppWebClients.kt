@@ -205,6 +205,17 @@ class AppWebChromeClient(
         }
     }
 
+    override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+        request?.grant(request.resources)
+    }
+
+    override fun onGeolocationPermissionsShowPrompt(
+        origin: String?,
+        callback: android.webkit.GeolocationPermissions.Callback?
+    ) {
+        callback?.invoke(origin, true, false)
+    }
+
     override fun onHideCustomView() {
         onCustomViewHiddenListener()
         super.onHideCustomView()

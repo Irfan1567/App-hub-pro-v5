@@ -136,7 +136,6 @@ class AppResourceManager(private val context: Context) {
     }
 
     private fun serveFileResponse(file: File, mimeType: String): WebResourceResponse {
-        val inputStream: InputStream = FileInputStream(file)
         val headers = mutableMapOf(
             "Access-Control-Allow-Origin" to "*",
             "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
@@ -151,6 +150,28 @@ class AppResourceManager(private val context: Context) {
             null // Binary stream for WASM, fonts, images, audio, video
         }
 
+        // Auto-detect if HTML file is wrapped in document/code block tags (<pre>&lt;!DOCTYPE...)
+        if (mimeType == "text/html" && file.exists()) {
+            try {
+                val rawContent = file.readText()
+                val executable = HtmlSanitizer.extractExecutableHtml(rawContent)
+                if (executable != rawContent) {
+                    try {
+                        file.writeText(executable)
+                    } catch (_: Exception) {}
+                    return WebResourceResponse(
+                        mimeType,
+                        encoding,
+                        200,
+                        "OK",
+                        headers,
+                        executable.byteInputStream(Charsets.UTF_8)
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+
+        val inputStream: InputStream = FileInputStream(file)
         return WebResourceResponse(
             mimeType,
             encoding,

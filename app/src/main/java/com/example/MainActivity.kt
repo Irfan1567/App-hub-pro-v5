@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 val currentDest by viewModel.currentDestination.collectAsState()
                 val selectedApp by viewModel.selectedApp.collectAsState()
                 val activeSessions by viewModel.activeSessions.collectAsState()
+                val allApps by viewModel.allApps.collectAsState()
 
                 var showCreateDialog by remember { mutableStateOf(false) }
                 var showImportDialog by remember { mutableStateOf(false) }
@@ -105,11 +106,8 @@ class MainActivity : ComponentActivity() {
                     AppNavDestination.SETTINGS
                 )
 
-                val scaffoldInsets = if (currentDest == AppNavDestination.PLAYER) {
-                    WindowInsets(0, 0, 0, 0)
-                } else {
-                    WindowInsets.statusBars
-                }
+                // Edge-to-edge: status bar merges seamlessly on Home screen and throughout the app
+                val scaffoldInsets = WindowInsets(0, 0, 0, 0)
 
                 val activePrimary = MaterialTheme.colorScheme.primary
 
@@ -198,7 +196,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { innerPadding ->
-                    Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = innerPadding.calculateBottomPadding())
+                    ) {
                         when (currentDest) {
                             AppNavDestination.HOME -> {
                                 HomeDashboardScreen(
@@ -220,11 +222,13 @@ class MainActivity : ComponentActivity() {
                             }
                             AppNavDestination.PLAYER -> {
                                 if (selectedApp != null) {
-                                    AppPlayerScreen(
-                                        viewModel = viewModel,
-                                        app = selectedApp!!,
-                                        onOpenSwitcherSheet = { showSwitcherSheet = true }
-                                    )
+                                    androidx.compose.runtime.key(selectedApp!!.id) {
+                                        AppPlayerScreen(
+                                            viewModel = viewModel,
+                                            app = selectedApp!!,
+                                            onOpenSwitcherSheet = { showSwitcherSheet = true }
+                                        )
+                                    }
                                 } else {
                                     viewModel.navigateTo(AppNavDestination.HOME)
                                 }
@@ -281,6 +285,7 @@ class MainActivity : ComponentActivity() {
                         if (showSwitcherSheet) {
                             MultiAppSwitcherSheet(
                                 activeSessions = activeSessions,
+                                allApps = allApps,
                                 currentActiveAppId = selectedApp?.id,
                                 sheetState = sheetState,
                                 onDismiss = { showSwitcherSheet = false },
@@ -318,9 +323,19 @@ class MainActivity : ComponentActivity() {
                                 onImportZipUri = { uri, name ->
                                     try {
                                         contentResolver.openInputStream(uri)?.use { stream ->
-                                            viewModel.importZip(stream, name) { app, _ ->
-                                                viewModel.launchApp(app)
-                                                Toast.makeText(this@MainActivity, "Imported ${app.name}!", Toast.LENGTH_SHORT).show()
+                                            if (name.endsWith(".json", ignoreCase = true)) {
+                                                viewModel.restoreWorkspaceBackup(stream) { result ->
+                                                    result.onSuccess { count ->
+                                                        Toast.makeText(this@MainActivity, "Restored $count apps & data!", Toast.LENGTH_LONG).show()
+                                                    }.onFailure { err ->
+                                                        Toast.makeText(this@MainActivity, "Restore error: ${err.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                viewModel.importZip(stream, name) { app, _ ->
+                                                    viewModel.launchApp(app)
+                                                    Toast.makeText(this@MainActivity, "Imported ${app.name}!", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         }
                                     } catch (e: Exception) {
@@ -330,20 +345,56 @@ class MainActivity : ComponentActivity() {
                                 onImportHtmlFileUri = { uri, name ->
                                     try {
                                         contentResolver.openInputStream(uri)?.use { stream ->
-                                            val content = stream.bufferedReader().readText()
-                                            viewModel.importSingleHtml(name, content) { app ->
-                                                viewModel.launchApp(app)
-                                                Toast.makeText(this@MainActivity, "Imported ${app.name}!", Toast.LENGTH_SHORT).show()
+                                            if (name.endsWith(".json", ignoreCase = true)) {
+                                                viewModel.restoreWorkspaceBackup(stream) { result ->
+                                                    result.onSuccess { count ->
+                                                        Toast.makeText(this@MainActivity, "Restored $count apps & data!", Toast.LENGTH_LONG).show()
+                                                    }.onFailure { err ->
+                                                        Toast.makeText(this@MainActivity, "Restore error: ${err.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                val content = stream.bufferedReader().readText()
+                                                viewModel.importSingleHtml(name, content) { app ->
+                                                    viewModel.launchApp(app)
+                                                    Toast.makeText(this@MainActivity, "Imported ${app.name}!", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         }
                                     } catch (e: Exception) {
                                         Toast.makeText(this@MainActivity, "Failed to import file: ${e.message}", Toast.LENGTH_LONG).show()
                                     }
                                 },
+                                onImportJsonBackupUri = { uri, name ->
+                                    try {
+                                        contentResolver.openInputStream(uri)?.use { stream ->
+                                            viewModel.restoreWorkspaceBackup(stream) { result ->
+                                                result.onSuccess { count ->
+                                                    Toast.makeText(this@MainActivity, "Restored $count apps and all data from backup!", Toast.LENGTH_LONG).show()
+                                                }.onFailure { err ->
+                                                    Toast.makeText(this@MainActivity, "Failed to restore backup: ${err.message}", Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(this@MainActivity, "Failed to open backup: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                },
                                 onImportRawHtml = { name, content ->
-                                    viewModel.importSingleHtml(name, content) { app ->
-                                        viewModel.launchApp(app)
-                                        Toast.makeText(this@MainActivity, "Created ${app.name}!", Toast.LENGTH_SHORT).show()
+                                    val trimmed = content.trim()
+                                    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                                        viewModel.restoreJsonBackup(content) { result ->
+                                            result.onSuccess { count ->
+                                                Toast.makeText(this@MainActivity, "Restored $count apps & data from JSON!", Toast.LENGTH_LONG).show()
+                                            }.onFailure { err ->
+                                                Toast.makeText(this@MainActivity, "Restore error: ${err.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    } else {
+                                        viewModel.importSingleHtml(name, content) { app ->
+                                            viewModel.launchApp(app)
+                                            Toast.makeText(this@MainActivity, "Saved and launched ${app.name}!", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             )

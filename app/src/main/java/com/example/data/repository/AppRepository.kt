@@ -202,13 +202,16 @@ button {
         fileName: String,
         content: String
     ): AppEntity = withContext(Dispatchers.IO) {
+        val sanitizedContent = com.example.runtime.HtmlSanitizer.extractExecutableHtml(content)
+        val extractedTitle = com.example.runtime.HtmlSanitizer.extractAppTitle(sanitizedContent)
+
         val appId = "app_" + System.currentTimeMillis()
         val appDir = File(File(context.filesDir, "apps"), appId).apply { mkdirs() }
         val cleanName = if (fileName.endsWith(".html", ignoreCase = true) || fileName.endsWith(".htm", ignoreCase = true)) fileName else "$fileName.html"
         val entryFile = File(appDir, cleanName)
-        entryFile.writeText(content)
+        entryFile.writeText(sanitizedContent)
 
-        val appName = cleanName.substringBeforeLast(".").replace("_", " ").replace("-", " ")
+        val appName = extractedTitle ?: cleanName.substringBeforeLast(".").replace("_", " ").replace("-", " ")
             .replaceFirstChar { it.uppercase() }
 
         val app = AppEntity(

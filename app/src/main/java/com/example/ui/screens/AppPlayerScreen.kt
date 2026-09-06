@@ -27,6 +27,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
@@ -122,22 +126,24 @@ fun AppPlayerScreen(
             .background(Color.Black)
     ) {
         // Main WebView Container
-        AndroidView(
-            factory = { context ->
-                session.webView.parent?.let { parent ->
-                    (parent as? ViewGroup)?.removeView(session.webView)
-                }
-                session.webView.layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                session.webView
-            },
-            update = { view ->
-                // Keep view attached
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+        androidx.compose.runtime.key(app.id) {
+            AndroidView(
+                factory = { context ->
+                    session.webView.parent?.let { parent ->
+                        (parent as? ViewGroup)?.removeView(session.webView)
+                    }
+                    session.webView.layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    session.webView
+                },
+                update = { view ->
+                    // Keep view attached
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Loading Progress Bar
         if (session.isLoading && session.progress < 100) {
@@ -177,7 +183,11 @@ fun AppPlayerScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(horizontal = 8.dp)
+                    .padding(
+                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 6.dp,
+                        bottom = 6.dp
+                    ),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
                 shadowElevation = 8.dp,
@@ -200,7 +210,11 @@ fun AppPlayerScreen(
 
                             Spacer(modifier = Modifier.width(4.dp))
 
-                            Column {
+                            Column(
+                                modifier = Modifier
+                                    .clickable { onOpenSwitcherSheet() }
+                                    .padding(vertical = 2.dp)
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = session.currentTitle.ifEmpty { app.name },
@@ -208,6 +222,13 @@ fun AppPlayerScreen(
                                         fontSize = 13.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = "Switch App",
+                                        tint = CyberCyan,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     if (app.isPinned) {
                                         Spacer(modifier = Modifier.width(4.dp))
@@ -220,7 +241,7 @@ fun AppPlayerScreen(
                                     }
                                 }
                                 Text(
-                                    text = if (session.isDesktopMode) "Desktop Mode • ${session.zoomPercent}%" else "Mobile Mode • ${session.zoomPercent}%",
+                                    text = if (session.isDesktopMode) "Desktop Mode • ${session.zoomPercent}% (Tap to switch)" else "Mobile Mode • ${session.zoomPercent}% (Tap to switch)",
                                     fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

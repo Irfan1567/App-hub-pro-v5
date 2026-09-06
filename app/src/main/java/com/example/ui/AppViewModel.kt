@@ -325,6 +325,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun restoreWorkspaceBackup(inputStream: InputStream, onComplete: (Result<Int>) -> Unit) {
+        viewModelScope.launch {
+            val result = backupManager.restoreWorkspaceBackup(inputStream)
+            onComplete(result)
+        }
+    }
+
+    fun restoreJsonBackup(jsonText: String, onComplete: (Result<Int>) -> Unit) {
+        viewModelScope.launch {
+            val result = backupManager.restoreJsonWorkspaceBackup(jsonText)
+            onComplete(result)
+        }
+    }
+
     fun createNewApp(name: String, templateType: String, description: String, onCreated: (AppEntity) -> Unit) {
         viewModelScope.launch {
             val app = appRepository.createNewAppFromTemplate(name, templateType, description)

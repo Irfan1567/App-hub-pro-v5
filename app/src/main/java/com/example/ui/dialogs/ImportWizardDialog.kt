@@ -3,10 +3,8 @@ package com.example.ui.dialogs
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,9 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,23 +39,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.ElectricViolet
+import com.example.ui.theme.EmeraldGlow
 
 @Composable
 fun ImportWizardDialog(
     onDismiss: () -> Unit,
     onImportZipUri: (Uri, String) -> Unit,
     onImportHtmlFileUri: (Uri, String) -> Unit,
+    onImportJsonBackupUri: (Uri, String) -> Unit,
     onImportRawHtml: (name: String, content: String) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: File/ZIP, 1: Paste HTML
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Files, 1: Paste Code
 
     // SAF Launchers
     val zipPickerLauncher = rememberLauncherForActivityResult(
@@ -64,7 +64,11 @@ fun ImportWizardDialog(
     ) { uri ->
         if (uri != null) {
             val fileName = getFileNameFromUri(context, uri) ?: "imported_app.zip"
-            onImportZipUri(uri, fileName)
+            if (fileName.endsWith(".json", ignoreCase = true)) {
+                onImportJsonBackupUri(uri, fileName)
+            } else {
+                onImportZipUri(uri, fileName)
+            }
             onDismiss()
         }
     }
@@ -74,18 +78,32 @@ fun ImportWizardDialog(
     ) { uri ->
         if (uri != null) {
             val fileName = getFileNameFromUri(context, uri) ?: "standalone.html"
-            onImportHtmlFileUri(uri, fileName)
+            if (fileName.endsWith(".json", ignoreCase = true)) {
+                onImportJsonBackupUri(uri, fileName)
+            } else {
+                onImportHtmlFileUri(uri, fileName)
+            }
             onDismiss()
         }
     }
 
-    var rawHtmlName by remember { mutableStateOf("") }
-    var rawHtmlContent by remember { mutableStateOf("") }
+    val jsonBackupPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val fileName = getFileNameFromUri(context, uri) ?: "apphub_backup.json"
+            onImportJsonBackupUri(uri, fileName)
+            onDismiss()
+        }
+    }
+
+    var rawCodeName by remember { mutableStateOf("") }
+    var rawCodeContent by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(text = "Import Project or HTML", fontWeight = FontWeight.Bold)
+            Text(text = "Import Projects & Backups", fontWeight = FontWeight.Bold)
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -96,12 +114,12 @@ fun ImportWizardDialog(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("Device File / ZIP", fontSize = 12.sp) }
+                        text = { Text("Device File / Backup", fontSize = 12.sp) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("Paste Raw HTML", fontSize = 12.sp) }
+                        text = { Text("Paste Code / JSON", fontSize = 12.sp) }
                     )
                 }
 
@@ -109,12 +127,16 @@ fun ImportWizardDialog(
 
                 val activePrimary = MaterialTheme.colorScheme.primary
                 if (selectedTab == 0) {
-                    // Option 1: ZIP Archive
+                    // Option 1: App Hub JSON Backup (Apps + Data)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { zipPickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*")) }
-                            .border(1.dp, activePrimary.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                            .clickable {
+                                jsonBackupPickerLauncher.launch(
+                                    arrayOf("application/json", "text/json", "text/plain", "application/octet-stream", "*/*")
+                                )
+                            }
+                            .border(1.dp, EmeraldGlow.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
@@ -122,7 +144,31 @@ fun ImportWizardDialog(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.FolderZip, contentDescription = null, tint = activePrimary, modifier = Modifier.size(32.dp))
+                            Icon(Icons.Default.DataObject, contentDescription = null, tint = EmeraldGlow, modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Import JSON Backup (Apps + Data)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Restores full backup exported from HTML App Hub with all apps & storage.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Option 2: ZIP Package
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { zipPickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*")) }
+                            .border(1.dp, CyberCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.FolderZip, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(32.dp))
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text("Import ZIP Package", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -131,9 +177,9 @@ fun ImportWizardDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Option 2: Standalone Single HTML File
+                    // Option 3: Standalone Single HTML File
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -150,17 +196,19 @@ fun ImportWizardDialog(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text("Import Single .html File", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Self-contained HTML file with embedded scripts and styles.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Self-contained HTML file (auto-unwraps any embedded or exported code).", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 } else {
-                    // Paste Raw HTML
+                    // Paste Code / JSON
+                    val isJsonDetected = rawCodeContent.trim().startsWith("{") || rawCodeContent.trim().startsWith("[")
+
                     OutlinedTextField(
-                        value = rawHtmlName,
-                        onValueChange = { rawHtmlName = it },
-                        label = { Text("App Name") },
-                        placeholder = { Text("e.g. My Quick Prototype") },
+                        value = rawCodeName,
+                        onValueChange = { rawCodeName = it },
+                        label = { Text(if (isJsonDetected) "Backup Label (Optional)" else "App Name") },
+                        placeholder = { Text(if (isJsonDetected) "e.g. My App Hub Backup" else "e.g. OmniChat Pro") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -168,10 +216,10 @@ fun ImportWizardDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
-                        value = rawHtmlContent,
-                        onValueChange = { rawHtmlContent = it },
-                        label = { Text("HTML Source Code") },
-                        placeholder = { Text("<!DOCTYPE html><html>...") },
+                        value = rawCodeContent,
+                        onValueChange = { rawCodeContent = it },
+                        label = { Text(if (isJsonDetected) "JSON Backup Data (Detected!)" else "HTML Source Code") },
+                        placeholder = { Text("Paste <!DOCTYPE html>... or JSON backup...") },
                         maxLines = 8,
                         minLines = 4,
                         modifier = Modifier.fillMaxWidth()
@@ -181,19 +229,22 @@ fun ImportWizardDialog(
 
                     Button(
                         onClick = {
-                            if (rawHtmlName.isNotBlank() && rawHtmlContent.isNotBlank()) {
-                                onImportRawHtml(rawHtmlName.trim(), rawHtmlContent)
+                            if (rawCodeContent.isNotBlank()) {
+                                onImportRawHtml(rawCodeName.trim(), rawCodeContent)
                                 onDismiss()
                             }
                         },
-                        enabled = rawHtmlName.isNotBlank() && rawHtmlContent.isNotBlank(),
+                        enabled = rawCodeContent.isNotBlank(),
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = activePrimary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
-                        Text("Save & Run Pasted HTML", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (isJsonDetected) "Restore Apps & Data from JSON" else "Save & Run App",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
