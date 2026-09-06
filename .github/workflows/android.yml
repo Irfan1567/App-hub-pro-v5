@@ -36,9 +36,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build with Gradle
+        env:
+          _JAVA_OPTIONS: "-Djava.awt.headless=true"
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace --build-cache
+          ./gradlew assembleDebug --stacktrace --build-cache -Djava.awt.headless=true
 
       - name: Collect APKs
         run: |
