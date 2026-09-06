@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Outer Glow rounded rectangle / hub base -->
+    <path
+        android:pathData="M32,32 h44 a10,10 0 0 1 10,10 v30 a10,10 0 0 1 -10,10 h-44 a10,10 0 0 1 -10,-10 v-30 a10,10 0 0 1 10,-10 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="22"
+                android:startY="22"
+                android:endX="86"
+                android:endY="86"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#2563EB" />
+                <item android:offset="0.5" android:color="#7C3AED" />
+                <item android:offset="1.0" android:color="#06B6D4" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner dark shield canvas -->
+    <path
+        android:fillColor="#0B0F19"
+        android:pathData="M34,35 h40 a8,8 0 0 1 8,8 v26 a8,8 0 0 1 -8,8 h-40 a8,8 0 0 1 -8,-8 v-26 a8,8 0 0 1 8,-8 z" />
+
+    <!-- Code bracket Left '<' -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M44,46 L37,53 L44,60" />
+
+    <!-- Code bracket Right '>' -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C084FC"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M64,46 L71,53 L64,60" />
+
+    <!-- Code slash '/' in bright cyan -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#34D399"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M57,45 L51,61" />
+
+    <!-- Pro golden star badge on top right -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M73,34 L75,39 L80,39.5 L76,43 L77.5,48 L73,45 L68.5,48 L70,43 L66,39.5 L71,39 Z" />
+
+</vector>

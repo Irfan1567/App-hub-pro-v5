@@ -1,0 +1,6 @@
+{
+  "name": "App Hub Pro",
+  "description": "Universal HTML & Web App Workspace and Runtime for Android with Multi-App Switching, DevConsole, and Built-in Code Editor",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
