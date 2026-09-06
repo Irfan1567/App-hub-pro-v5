@@ -23,11 +23,35 @@ object HtmlSanitizer {
             }
         }
 
-        // Case 2: Wrapped inside <pre> ... </pre> or <textarea> ... </textarea> or <xmp> ... </xmp>
-        val codeTagPattern = Pattern.compile("<(pre|textarea|xmp|code)[^>]*>([\\s\\S]*?)</\\1>", Pattern.CASE_INSENSITIVE)
+        // Case 2: Document is ALREADY a valid HTML document or starts with standard HTML tags.
+        // CRITICAL: NEVER perform regex inner-tag extraction on valid HTML documents as this
+        // will destroy apps like OmniChat that contain markdown, code blocks, or stylesheets!
+        val lowerSample = trimmed.take(1024).lowercase()
+        if (lowerSample.contains("<!doctype html") ||
+            lowerSample.contains("<html") ||
+            lowerSample.contains("<head") ||
+            lowerSample.contains("<body") ||
+            lowerSample.contains("<!--")
+        ) {
+            return trimmed
+        }
+
+        // Case 3: String itself begins with or is predominantly escaped &lt;!DOCTYPE or &lt;html
+        if (trimmed.startsWith("&lt;!DOCTYPE", ignoreCase = true) ||
+            trimmed.startsWith("&lt;html", ignoreCase = true) ||
+            (trimmed.contains("&lt;!DOCTYPE html", ignoreCase = true) && !trimmed.contains("<!DOCTYPE html", ignoreCase = true))
+        ) {
+            val unescaped = unescapeHtmlEntities(trimmed)
+            if (isExecutableHtmlDoc(unescaped)) {
+                return unescaped
+            }
+        }
+
+        // Case 4: Wrapped strictly as a single outer container <pre>...</pre> or <textarea>...</textarea>
+        val codeTagPattern = Pattern.compile("^<(?:pre|textarea|xmp|code)[^>]*>([\\s\\S]*?)</(?:pre|textarea|xmp|code)>$", Pattern.CASE_INSENSITIVE)
         val matcher = codeTagPattern.matcher(trimmed)
-        while (matcher.find()) {
-            val candidate = matcher.group(2) ?: continue
+        if (matcher.find()) {
+            val candidate = matcher.group(1) ?: ""
             val candidateTrimmed = candidate.trim()
             val unescaped = unescapeHtmlEntities(candidateTrimmed).trim()
             if (isExecutableHtmlDoc(unescaped)) {
@@ -38,17 +62,7 @@ object HtmlSanitizer {
             }
         }
 
-        // Case 3: String itself begins with or is predominantly escaped &lt;!DOCTYPE or &lt;html
-        if (trimmed.startsWith("&lt;!DOCTYPE", ignoreCase = true) ||
-            trimmed.startsWith("&lt;html", ignoreCase = true) ||
-            (trimmed.contains("&lt;!DOCTYPE html", ignoreCase = true) && !trimmed.contains("<!DOCTYPE html", ignoreCase = true))) {
-            val unescaped = unescapeHtmlEntities(trimmed)
-            if (isExecutableHtmlDoc(unescaped)) {
-                return unescaped
-            }
-        }
-
-        // Case 4: Embedded inside arbitrary markdown or document with &lt;!DOCTYPE ... &lt;/html&gt;
+        // Case 5: Embedded inside arbitrary markdown or document with &lt;!DOCTYPE ... &lt;/html&gt;
         val startIdx = trimmed.indexOf("&lt;!DOCTYPE", ignoreCase = true)
         val endTag = "&lt;/html&gt;"
         val endIdx = trimmed.lastIndexOf(endTag, ignoreCase = true)
@@ -58,37 +72,6 @@ object HtmlSanitizer {
             if (isExecutableHtmlDoc(unescaped)) {
                 return unescaped
             }
-        }
-
-        // Case 5: Document starts with <!DOCTYPE or <html
-        if (trimmed.startsWith("<!DOCTYPE", ignoreCase = true) || trimmed.startsWith("<html", ignoreCase = true)) {
-            // Check if it's an export viewer document whose body only displays another escaped HTML document
-            val bodyInnerPattern = Pattern.compile("<body[^>]*>\\s*<(pre|div|code)[^>]*>([\\s\\S]*?)</\\1>\\s*</body>", Pattern.CASE_INSENSITIVE)
-            val bodyMatcher = bodyInnerPattern.matcher(trimmed)
-            if (bodyMatcher.find()) {
-                val innerCode = bodyMatcher.group(2)?.trim() ?: ""
-                val unescaped = unescapeHtmlEntities(innerCode)
-                if (isExecutableHtmlDoc(unescaped)) {
-                    return unescaped
-                }
-            }
-            return trimmed
-        }
-
-        // Case 6: Fragment with <body>, <script>, or HTML elements but missing doctype/html wrapper
-        if (isExecutableFragment(trimmed)) {
-            return """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                </head>
-                <body>
-                    $trimmed
-                </body>
-                </html>
-            """.trimIndent()
         }
 
         return trimmed

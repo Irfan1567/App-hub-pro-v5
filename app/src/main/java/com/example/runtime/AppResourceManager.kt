@@ -166,17 +166,11 @@ class AppResourceManager(private val context: Context) {
             null // Binary stream for WASM, fonts, images, audio, video
         }
 
-        // Auto-detect if HTML file is wrapped in document/code block tags (<pre>&lt;!DOCTYPE...)
-        // and inject restored localStorage if present
+        // Serve HTML file and inject restored localStorage if present
         if (mimeType == "text/html" && file.exists()) {
             try {
                 val rawContent = file.readText(Charsets.UTF_8)
                 val executable = HtmlSanitizer.extractExecutableHtml(rawContent)
-                if (executable != rawContent) {
-                    try {
-                        file.writeText(executable, Charsets.UTF_8)
-                    } catch (_: Exception) {}
-                }
 
                 // Check for localstorage.json to inject restored state
                 val lsFile = File(appRootDir, "localstorage.json")

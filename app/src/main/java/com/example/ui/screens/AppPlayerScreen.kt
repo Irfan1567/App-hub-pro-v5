@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BugReport
@@ -141,7 +142,12 @@ fun AppPlayerScreen(
                 update = { view ->
                     // Keep view attached
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = if (isFullscreen) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                        bottom = if (isFullscreen) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    )
             )
         }
 
