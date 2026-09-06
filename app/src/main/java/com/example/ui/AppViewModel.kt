@@ -174,10 +174,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun switchToRunningApp(appId: String) {
-        sessionManager.switchToApp(appId)
         val app = allApps.value.firstOrNull { it.id == appId }
         if (app != null) {
             _selectedApp.value = app
+            sessionManager.getOrCreateSession(
+                app = app,
+                onFileChooser = { callback, _ ->
+                    pendingFileChooserCallback = callback
+                    true
+                }
+            )
+            sessionManager.switchToApp(appId)
         }
         _currentDestination.value = AppNavDestination.PLAYER
     }

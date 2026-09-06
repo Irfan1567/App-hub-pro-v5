@@ -125,17 +125,18 @@ class AppResourceManager(private val context: Context) {
                 val anyHtml = canonicalRootDir.walkTopDown().firstOrNull { it.isFile && (it.extension.equals("html", ignoreCase = true) || it.extension.equals("htm", ignoreCase = true)) }
                 if (anyHtml != null) {
                     val mimeType = detectMimeType(anyHtml.name)
-                    return serveFileResponse(anyHtml, mimeType)
+                    return serveFileResponse(anyHtml, mimeType, canonicalRootDir)
                 }
             }
             return createErrorResponse(404, "File Not Found: $decodedPath")
         }
 
         val mimeType = detectMimeType(targetFile.name)
-        return serveFileResponse(targetFile, mimeType)
+        return serveFileResponse(targetFile, mimeType, canonicalRootDir)
     }
 
-    private fun serveFileResponse(file: File, mimeType: String): WebResourceResponse {
+    private fun serveFileResponse(file: File, initialMimeType: String, appRootDir: File): WebResourceResponse {
+        var mimeType = initialMimeType
         val headers = mutableMapOf(
             "Access-Control-Allow-Origin" to "*",
             "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
@@ -144,6 +145,21 @@ class AppResourceManager(private val context: Context) {
             "Pragma" to "no-cache",
             "Expires" to "0"
         )
+
+        // Check if file is HTML despite extension (e.g. .txt or no extension)
+        if (mimeType != "text/html" && file.length() < 5 * 1024 * 1024) {
+            try {
+                val headerBytes = ByteArray(1024)
+                val readLen = FileInputStream(file).use { it.read(headerBytes) }
+                if (readLen > 0) {
+                    val headSample = String(headerBytes, 0, readLen, Charsets.UTF_8).lowercase()
+                    if (headSample.contains("<!doctype html") || headSample.contains("<html") || headSample.contains("<body") || headSample.contains("<script")) {
+                        mimeType = "text/html"
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         val encoding = if (mimeType.startsWith("text/") || mimeType == "application/javascript" || mimeType == "application/json" || mimeType == "image/svg+xml") {
             "UTF-8"
         } else {
@@ -151,23 +167,47 @@ class AppResourceManager(private val context: Context) {
         }
 
         // Auto-detect if HTML file is wrapped in document/code block tags (<pre>&lt;!DOCTYPE...)
+        // and inject restored localStorage if present
         if (mimeType == "text/html" && file.exists()) {
             try {
-                val rawContent = file.readText()
+                val rawContent = file.readText(Charsets.UTF_8)
                 val executable = HtmlSanitizer.extractExecutableHtml(rawContent)
                 if (executable != rawContent) {
                     try {
-                        file.writeText(executable)
+                        file.writeText(executable, Charsets.UTF_8)
                     } catch (_: Exception) {}
-                    return WebResourceResponse(
-                        mimeType,
-                        encoding,
-                        200,
-                        "OK",
-                        headers,
-                        executable.byteInputStream(Charsets.UTF_8)
-                    )
                 }
+
+                // Check for localstorage.json to inject restored state
+                val lsFile = File(appRootDir, "localstorage.json")
+                val finalHtml = if (lsFile.exists()) {
+                    try {
+                        val lsJson = lsFile.readText(Charsets.UTF_8).trim()
+                        if (lsJson.startsWith("{") && lsJson.endsWith("}")) {
+                            val injectScript = "<script>(function(){try{var _hub_ls=$lsJson;for(var _k in _hub_ls){if(localStorage.getItem(_k)===null){localStorage.setItem(_k,typeof _hub_ls[_k]==='string'?_hub_ls[_k]:JSON.stringify(_hub_ls[_k]));}}}catch(e){}})();</script>"
+                            if (executable.contains("<head", ignoreCase = true)) {
+                                executable.replaceFirst(Regex("(<head[^>]*>)", RegexOption.IGNORE_CASE), "$1$injectScript")
+                            } else {
+                                "$injectScript$executable"
+                            }
+                        } else {
+                            executable
+                        }
+                    } catch (_: Exception) {
+                        executable
+                    }
+                } else {
+                    executable
+                }
+
+                return WebResourceResponse(
+                    "text/html",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    headers,
+                    finalHtml.byteInputStream(Charsets.UTF_8)
+                )
             } catch (_: Exception) {}
         }
 

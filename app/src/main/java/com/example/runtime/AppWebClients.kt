@@ -137,6 +137,19 @@ class AppWebClient(
         }
     }
 
+    override fun onReceivedSslError(
+        view: WebView?,
+        handler: android.webkit.SslErrorHandler?,
+        error: android.net.http.SslError?
+    ) {
+        val url = error?.url ?: ""
+        if (url.contains(".apphub.local") || url.contains("apphub.local") || url.contains("localhost") || url.contains("127.0.0.1")) {
+            handler?.proceed()
+        } else {
+            super.onReceivedSslError(view, handler, error)
+        }
+    }
+
     override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
         onRendererCrashListener()
         return true // Prevent host app crash!

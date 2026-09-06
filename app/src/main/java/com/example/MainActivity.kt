@@ -107,7 +107,11 @@ class MainActivity : ComponentActivity() {
                 )
 
                 // Edge-to-edge: status bar merges seamlessly on Home screen and throughout the app
-                val scaffoldInsets = WindowInsets(0, 0, 0, 0)
+                val scaffoldInsets = if (currentDest == AppNavDestination.PLAYER) {
+                    WindowInsets(0, 0, 0, 0)
+                } else {
+                    WindowInsets.statusBars
+                }
 
                 val activePrimary = MaterialTheme.colorScheme.primary
 
@@ -199,7 +203,10 @@ class MainActivity : ComponentActivity() {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = innerPadding.calculateBottomPadding())
+                            .padding(
+                                top = if (currentDest == AppNavDestination.PLAYER) 0.dp else innerPadding.calculateTopPadding(),
+                                bottom = innerPadding.calculateBottomPadding()
+                            )
                     ) {
                         when (currentDest) {
                             AppNavDestination.HOME -> {

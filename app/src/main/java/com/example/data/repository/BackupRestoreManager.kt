@@ -158,12 +158,23 @@ class BackupRestoreManager(
                 val array = JSONArray(trimmed)
                 for (i in 0 until array.length()) {
                     val item = array.optJSONObject(i) ?: continue
-                    if (restoreSingleAppFromJson(item, appsDir, i)) {
+                    if (restoreSingleAppFromJson(item, appsDir, i, null, null)) {
                         restoredApps++
                     }
                 }
             } else if (trimmed.startsWith("{")) {
                 val root = JSONObject(trimmed)
+
+                // Extract root-level collections
+                val rootFiles = root.optJSONObject("files")
+                val rootLs = root.optJSONObject("ls") ?: root.optJSONObject("localStorage") ?: root.optJSONObject("storage")
+                val pinnedArray = root.optJSONArray("pinned")
+                val pinnedSet = mutableSetOf<String>()
+                if (pinnedArray != null) {
+                    for (p in 0 until pinnedArray.length()) {
+                        pinnedSet.add(pinnedArray.opt(p)?.toString() ?: "")
+                    }
+                }
 
                 // Check 1: "apps" array or map
                 if (root.has("apps")) {
@@ -171,7 +182,7 @@ class BackupRestoreManager(
                     if (appsVal is JSONArray) {
                         for (i in 0 until appsVal.length()) {
                             val item = appsVal.optJSONObject(i) ?: continue
-                            if (restoreSingleAppFromJson(item, appsDir, i)) {
+                            if (restoreSingleAppFromJson(item, appsDir, i, rootFiles, rootLs, pinnedSet)) {
                                 restoredApps++
                             }
                         }
@@ -183,47 +194,76 @@ class BackupRestoreManager(
                             val item = appsVal.optJSONObject(key) ?: continue
                             if (!item.has("id")) item.put("id", key)
                             if (!item.has("name")) item.put("name", key)
-                            if (restoreSingleAppFromJson(item, appsDir, index++)) {
+                            if (restoreSingleAppFromJson(item, appsDir, index++, rootFiles, rootLs, pinnedSet)) {
                                 restoredApps++
                             }
                         }
                     }
                 }
 
-                // Check 2: "projects" or "items" or "workspaces"
+                // Check 2: If no apps were restored via "apps", but "files" contains apps mapped by ID
+                if (restoredApps == 0 && rootFiles != null && rootFiles.length() > 0) {
+                    val fileKeys = rootFiles.keys()
+                    var fIndex = 0
+                    while (fileKeys.hasNext()) {
+                        val fileKey = fileKeys.next()
+                        val fileVal = rootFiles.get(fileKey)
+                        val appId = if (fileKey.matches(Regex("^[0-9]+$"))) "app_$fileKey" else fileKey
+                        val appDir = File(appsDir, appId).apply { mkdirs() }
+                        var entryHtml = ""
+
+                        if (fileVal is String) {
+                            entryHtml = HtmlSanitizer.extractExecutableHtml(fileVal)
+                            File(appDir, "index.html").writeText(entryHtml)
+                        } else if (fileVal is JSONObject) {
+                            val subKeys = fileVal.keys()
+                            while (subKeys.hasNext()) {
+                                val subKey = subKeys.next()
+                                val content = fileVal.optString(subKey)
+                                val f = File(appDir, subKey)
+                                f.parentFile?.mkdirs()
+                                val clean = if (subKey.endsWith(".html", ignoreCase = true)) HtmlSanitizer.extractExecutableHtml(content) else content
+                                f.writeText(clean)
+                                if (entryHtml.isEmpty() && subKey.endsWith(".html", ignoreCase = true)) {
+                                    entryHtml = clean
+                                }
+                            }
+                        }
+
+                        if (rootLs != null) {
+                            try {
+                                File(appDir, "localstorage.json").writeText(rootLs.toString())
+                            } catch (_: Exception) {}
+                        }
+
+                        val title = HtmlSanitizer.extractAppTitle(entryHtml) ?: "Imported App ${fIndex + 1}"
+                        appDao.insertApp(
+                            AppEntity(
+                                id = appId,
+                                name = title,
+                                description = "Imported from App Hub backup",
+                                iconName = "code",
+                                entryPoint = "index.html",
+                                projectDirName = appId,
+                                isPinned = pinnedSet.contains(fileKey) || pinnedSet.contains(appId),
+                                storageSizeBytes = appDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                            )
+                        )
+                        restoredApps++
+                        fIndex++
+                    }
+                }
+
+                // Check 3: "projects" or "items" or "workspaces"
                 for (candidateListKey in listOf("projects", "items", "workspaces", "sites")) {
                     if (restoredApps == 0 && root.has(candidateListKey)) {
                         val arr = root.optJSONArray(candidateListKey)
                         if (arr != null) {
                             for (i in 0 until arr.length()) {
                                 val item = arr.optJSONObject(i) ?: continue
-                                if (restoreSingleAppFromJson(item, appsDir, i)) {
+                                if (restoreSingleAppFromJson(item, appsDir, i, rootFiles, rootLs, pinnedSet)) {
                                     restoredApps++
                                 }
-                            }
-                        }
-                    }
-                }
-
-                // Check 3: "localStorage" dump from Web App Hub
-                if (root.has("localStorage")) {
-                    val lsObj = root.optJSONObject("localStorage")
-                    if (lsObj != null) {
-                        // Look for stringified app arrays like "apphub_apps", "apps", "projects"
-                        val keys = lsObj.keys()
-                        while (keys.hasNext()) {
-                            val k = keys.next()
-                            val v = lsObj.optString(k, "")
-                            if (v.startsWith("[")) {
-                                try {
-                                    val arr = JSONArray(v)
-                                    for (i in 0 until arr.length()) {
-                                        val item = arr.optJSONObject(i) ?: continue
-                                        if (restoreSingleAppFromJson(item, appsDir, restoredApps + i)) {
-                                            restoredApps++
-                                        }
-                                    }
-                                } catch (_: Exception) {}
                             }
                         }
                     }
@@ -233,7 +273,7 @@ class BackupRestoreManager(
                 if (restoredApps == 0) {
                     val hasHtml = root.has("html") || root.has("content") || root.has("code") || root.has("source")
                     if (hasHtml || root.has("name") || root.has("title") || root.has("app")) {
-                        if (restoreSingleAppFromJson(root, appsDir, 0)) {
+                        if (restoreSingleAppFromJson(root, appsDir, 0, rootFiles, rootLs, pinnedSet)) {
                             restoredApps++
                         }
                     }
@@ -244,12 +284,13 @@ class BackupRestoreManager(
                     val omniName = root.optString("app", "OmniChat Pro")
                     val appId = "app_omnichat_restored"
                     val appDir = File(appsDir, appId).apply { mkdirs() }
-                    
-                    // Save backup data so OmniChat can read its restored chats/providers
-                    val backupStorageFile = File(appDir, "backup_state.json")
-                    backupStorageFile.writeText(jsonString)
 
-                    // Write runner index.html
+                    if (rootLs != null) {
+                        File(appDir, "localstorage.json").writeText(rootLs.toString())
+                    } else {
+                        File(appDir, "localstorage.json").writeText(jsonString)
+                    }
+
                     val runnerHtml = """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>$omniName</title><style>body{background:#0b0d14;color:#eef1f8;font-family:sans-serif;padding:24px;text-align:center;}button{background:#7c6cff;color:#fff;border:none;padding:12px 24px;border-radius:12px;font-weight:bold;cursor:pointer;margin-top:16px;}</style></head><body><h1>⚡ $omniName Data Restored</h1><p>Chats, providers and models imported from backup.</p><div id="info" style="font-family:monospace;margin:16px 0;opacity:0.8;">Data loaded successfully</div><script>console.log('OmniChat backup data restored');</script></body></html>"""
                     File(appDir, "index.html").writeText(runnerHtml)
 
@@ -280,7 +321,21 @@ class BackupRestoreManager(
         }
     }
 
-    private suspend fun restoreSingleAppFromJson(item: JSONObject, appsDir: File, index: Int): Boolean {
+    private suspend fun restoreSingleAppFromJson(
+        item: JSONObject,
+        appsDir: File,
+        index: Int,
+        rootFiles: JSONObject? = null,
+        rootLs: JSONObject? = null,
+        pinnedSet: Set<String> = emptySet()
+    ): Boolean {
+        val rawId = item.opt("id")?.toString() ?: ""
+        val appId = if (rawId.isNotBlank()) {
+            if (rawId.matches(Regex("^[0-9]+$"))) "app_$rawId" else rawId
+        } else {
+            "app_" + System.currentTimeMillis() + "_" + index
+        }
+
         var rawHtml = item.optString("html").ifBlank {
             item.optString("content").ifBlank {
                 item.optString("code").ifBlank {
@@ -293,54 +348,71 @@ class BackupRestoreManager(
             }
         }
 
-        // Check if files map exists
-        val filesObj = item.optJSONObject("files")
+        // Check if rootFiles has the code for this app using rawId or raw numeric id
+        var filesObj = item.optJSONObject("files")
         val filesArr = item.optJSONArray("files")
 
+        if (rawHtml.isBlank() && filesObj == null && rootFiles != null) {
+            // Check by exact raw ID (e.g. "1712345678901")
+            val fromRoot = if (rawId.isNotBlank()) rootFiles.opt(rawId) else null
+            val fromStripped = if (rawId.startsWith("app_")) rootFiles.opt(rawId.removePrefix("app_")) else null
+            val fileCandidate = fromRoot ?: fromStripped ?: run {
+                // If only 1 file in rootFiles, use it
+                if (rootFiles.length() == 1) {
+                    val k = rootFiles.keys().next()
+                    rootFiles.opt(k)
+                } else null
+            }
+
+            if (fileCandidate is String) {
+                rawHtml = fileCandidate
+            } else if (fileCandidate is JSONObject) {
+                filesObj = fileCandidate
+            }
+        }
+
         if (rawHtml.isBlank() && filesObj == null && filesArr == null) {
-            // Check if any string field contains HTML
+            // Check if any string field in item contains HTML
             val keys = item.keys()
             while (keys.hasNext()) {
                 val k = keys.next()
                 val str = item.optString(k, "")
-                if (str.length > 80 && (str.contains("<!doctype", ignoreCase = true) || str.contains("<html", ignoreCase = true) || str.contains("&lt;!DOCTYPE", ignoreCase = true))) {
+                if (str.length > 60 && (str.contains("<!doctype", ignoreCase = true) || str.contains("<html", ignoreCase = true) || str.contains("&lt;!DOCTYPE", ignoreCase = true))) {
                     rawHtml = str
                     break
                 }
             }
         }
 
-        if (rawHtml.isBlank() && filesObj == null && filesArr == null) {
+        // Even if no code found, if this is an app with name and type="html", create an entry with a fallback or title
+        val hasName = item.has("name") || item.has("title")
+        if (rawHtml.isBlank() && filesObj == null && filesArr == null && !hasName) {
             return false
         }
 
         val sanitizedHtml = if (rawHtml.isNotBlank()) HtmlSanitizer.extractExecutableHtml(rawHtml) else ""
         val extractedTitle = if (sanitizedHtml.isNotBlank()) HtmlSanitizer.extractAppTitle(sanitizedHtml) else null
 
-        val name = extractedTitle ?: item.optString("name").ifBlank {
+        val name = item.optString("name").ifBlank {
             item.optString("title").ifBlank {
-                item.optString("appName").ifBlank {
-                    "App ${index + 1}"
-                }
+                extractedTitle ?: "App ${index + 1}"
             }
         }
 
         val desc = item.optString("description").ifBlank {
-            item.optString("desc", "Restored from JSON backup")
+            item.optString("category").ifBlank {
+                item.optString("desc", "Restored from App Hub backup")
+            }
         }
 
-        val icon = item.optString("iconName").ifBlank {
-            item.optString("icon", "web")
-        }
-
-        val appId = item.optString("id").ifBlank {
-            "app_" + System.currentTimeMillis() + "_" + index
+        val icon = item.optString("icon").ifBlank {
+            item.optString("iconName", "code")
         }
 
         val appDir = File(appsDir, appId).apply { mkdirs() }
         var entryPoint = item.optString("entryPoint", "index.html")
 
-        // Write files
+        // Write files if map exists
         if (filesObj != null) {
             val fKeys = filesObj.keys()
             while (fKeys.hasNext()) {
@@ -368,32 +440,44 @@ class BackupRestoreManager(
         if (!entryFile.exists() && sanitizedHtml.isNotBlank()) {
             entryFile.writeText(sanitizedHtml)
         } else if (!entryFile.exists()) {
-            // Pick first HTML file in folder
             val firstHtml = appDir.walkTopDown().firstOrNull { it.isFile && it.extension.equals("html", ignoreCase = true) }
             if (firstHtml != null) {
                 entryPoint = firstHtml.relativeTo(appDir).path.replace('\\', '/')
+            } else {
+                // Generate a placeholder page if code was in an external URL or missing
+                val url = item.optString("url")
+                val placeholder = if (url.isNotBlank() && url != "null") {
+                    """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>$name</title><meta http-equiv="refresh" content="0; url=$url"></head><body>Redirecting to $url...</body></html>"""
+                } else {
+                    """<!DOCTYPE html><html><head><meta charset="UTF-8"><title>$name</title><style>body{background:#0b0d14;color:#eef1f8;font-family:sans-serif;padding:24px;text-align:center;}</style></head><body><h1>$name</h1><p>Restored from App Hub</p></body></html>"""
+                }
+                entryFile.writeText(placeholder)
             }
         }
 
         // Save app data / localStorage
-        val dataObj = item.optJSONObject("data") ?: item.optJSONObject("storage") ?: item.optJSONObject("localStorage")
+        val dataObj = item.optJSONObject("data") ?: item.optJSONObject("storage") ?: item.optJSONObject("localStorage") ?: rootLs
         if (dataObj != null) {
             try {
-                File(appDir, "localstorage_backup.json").writeText(dataObj.toString(2))
+                File(appDir, "localstorage.json").writeText(dataObj.toString())
             } catch (_: Exception) {}
         }
 
-        appDao.insertApp(
-            AppEntity(
-                id = appId,
-                name = name,
-                description = desc,
-                iconName = icon,
-                entryPoint = entryPoint,
-                projectDirName = appId,
-                storageSizeBytes = appDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-            )
+        val isPinned = pinnedSet.contains(rawId) || pinnedSet.contains(appId) || item.optBoolean("isPinned", false)
+
+        val entity = AppEntity(
+            id = appId,
+            name = name,
+            description = desc,
+            iconName = icon,
+            entryPoint = entryPoint,
+            projectDirName = appId,
+            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
+            lastUsedAt = item.optLong("lastOpened", System.currentTimeMillis()),
+            isPinned = isPinned,
+            storageSizeBytes = appDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         )
+        appDao.insertApp(entity)
         return true
     }
 }
